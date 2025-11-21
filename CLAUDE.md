@@ -8,25 +8,35 @@ This is a PowerShell module for AES-256-GCM authenticated encryption designed fo
 
 ## Architecture
 
-### Dual-Implementation Strategy
+### Triple-Implementation Strategy
 
-The module implements **automatic runtime detection with graceful fallback**:
+The module implements **automatic runtime detection with graceful fallback** and **variable IV size support**:
 
 1. **Modern Path** (`Classes/AesGcmNative.ps1`):
    - Uses `System.Security.Cryptography.AesGcm` class
    - Available in .NET Core 3.0+, .NET 5+, PowerShell 7+
    - Simple wrapper functions around native API
+   - **IV Support**: 96 bits (12 bytes) only
 
 2. **Legacy Path** (`Classes/AesGcmLegacy.ps1`):
    - Uses P/Invoke to Windows BCrypt CNG APIs (`bcrypt.dll`)
    - Compatible with .NET Framework 3.5+ (Windows 7+)
    - Implements full BCrypt interop with proper handle management
    - Defines C# P/Invoke signatures via `Add-Type` at runtime
+   - **IV Support**: 96 bits (12 bytes) only
 
-**Selection Logic** (`AesGcm.psm1:Initialize-AesGcmImplementation`):
-- First attempts to detect `System.Security.Cryptography.AesGcm` type
-- Falls back to BCrypt P/Invoke if native type unavailable
-- Selection happens once per module load and is cached
+3. **Full GCM Path** (`Classes/AesGcmFull.ps1`):
+   - Custom GHASH and CTR mode implementation using AES-ECB primitives
+   - Supports **variable IV sizes** (1-2056+ bits, any length except 0)
+   - Implements NIST SP 800-38D specification fully
+   - Automatic fallback for non-standard IV sizes
+   - **IV Support**: All sizes (1 bit to 2^61 bits, except 0)
+
+**Selection Logic** (`AesGcm.psm1:Invoke-AesGcmEncrypt/Decrypt`):
+- If IV size is not 12 bytes: Uses Full GCM implementation (supports all sizes)
+- Else if `System.Security.Cryptography.AesGcm` available: Uses Native implementation
+- Else: Uses Legacy BCrypt implementation
+- Selection happens per operation based on IV size
 
 ### Module Entry Points
 
@@ -57,11 +67,23 @@ The `AesGcmLegacy.ps1` implementation:
 - Requires proper resource cleanup in finally blocks
 - Zero-length data must be handled with null pointers, not empty arrays
 
+### Full GCM Implementation Structure
+
+The `AesGcmFull.ps1` implementation:
+- Compiles C# code at runtime using `Add-Type`
+- Implements GHASH using Galois field GF(2^128) multiplication
+- Implements CTR mode using AES-ECB primitives
+- Computes J0 (initial counter) according to NIST SP 800-38D:
+  * For 96-bit IVs: `J0 = IV || 0^31 || 1`
+  * For other sizes: `J0 = GHASH(H, {}, IV || 0^s || [len(IV)]64)`
+- Correctly handles all IV sizes except zero-length
+- Uses `AesGcmFull` namespace for all classes
+
 ### Namespace Conventions
 
-- BCrypt code uses `AesGcmBCrypt` namespace
-- All P/Invoke definitions are in nested `BCryptNative` static class
-- Main implementation is in `AesGcmCng` static class
+- Native code (when available): Uses `System.Security.Cryptography.AesGcm`
+- BCrypt code uses `AesGcmBCrypt` namespace (P/Invoke definitions in `BCryptNative`, implementation in `AesGcmCng`)
+- Full GCM code uses `AesGcmFull` namespace (`GaloisFieldMultiplier` and `AesGcmEngine` classes)
 
 ## Testing
 
@@ -88,17 +110,20 @@ powershell.exe -NoProfile -File .\example.ps1
 
 ### Test Results Expectations
 - **105 tests executed** (AES-256 only, out of 316 total)
-- **66+ tests should pass** (62.86%+)
-- **39 failures are expected** (edge cases with non-standard IV sizes)
-- Tests 92-93 validate empty plaintext handling
-- Tests 240-258 are counter wrap tests that may fail on some platforms
+- **103 tests should pass** (98.10%)
+- **2 failures are expected** (zero-length IV tests, correctly rejected as invalid)
+- Tests 92-93 validate empty plaintext handling (should pass)
+- Tests 299-310 validate small IV sizes 8-80 bits (should pass with full GCM)
+- Tests 263-276 validate long IV sizes 120-2056 bits (should pass with full GCM)
+- Tests 315-316 validate zero-length IV rejection (should fail with error)
 
 ## Key Files
 
 - **AesGcm.psm1**: Main module with public cmdlets and implementation routing
 - **AesGcm.psd1**: Module manifest (defines exported functions)
-- **Classes/AesGcmNative.ps1**: .NET Core/5+ implementation
-- **Classes/AesGcmLegacy.ps1**: BCrypt P/Invoke for .NET Framework
+- **Classes/AesGcmNative.ps1**: .NET Core/5+ implementation (96-bit IV only)
+- **Classes/AesGcmLegacy.ps1**: BCrypt P/Invoke for .NET Framework (96-bit IV only)
+- **Classes/AesGcmFull.ps1**: Full GCM with GHASH (all IV sizes)
 - **TestVectors/aes_gcm_test.json**: 316 Wycheproof test vectors (v0.9rc5)
 
 ## Development Constraints
