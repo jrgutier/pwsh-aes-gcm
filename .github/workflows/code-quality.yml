@@ -1,0 +1,125 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, develop, claude/** ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: PSScriptAnalyzer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Write-Host "Installing PSScriptAnalyzer..."
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Write-Host "Running PSScriptAnalyzer..."
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Settings PSGallery -Severity Warning,Error
+
+          if ($results) {
+            Write-Host "PSScriptAnalyzer found issues:"
+            $results | Format-Table -AutoSize
+
+            $errorCount = ($results | Where-Object Severity -eq 'Error').Count
+            $warningCount = ($results | Where-Object Severity -eq 'Warning').Count
+
+            Write-Host "`nSummary: $errorCount errors, $warningCount warnings"
+
+            if ($errorCount -gt 0) {
+              Write-Error "PSScriptAnalyzer found $errorCount error(s)"
+              exit 1
+            }
+          } else {
+            Write-Host "No issues found by PSScriptAnalyzer"
+          }
+
+  validate-syntax:
+    name: Validate PowerShell Syntax
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate PowerShell files
+        shell: pwsh
+        run: |
+          Write-Host "Validating PowerShell syntax..."
+          $errors = @()
+
+          Get-ChildItem -Path . -Filter "*.ps*1" -Recurse | ForEach-Object {
+            Write-Host "Checking: $($_.FullName)"
+
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$null,
+              [ref]$parseErrors
+            )
+
+            if ($parseErrors) {
+              Write-Host "  Errors found in $($_.Name):"
+              $parseErrors | ForEach-Object {
+                Write-Host "    Line $($_.Extent.StartLineNumber): $($_.Message)"
+              }
+              $errors += $parseErrors
+            } else {
+              Write-Host "  OK"
+            }
+          }
+
+          if ($errors.Count -gt 0) {
+            Write-Error "Found $($errors.Count) syntax error(s)"
+            exit 1
+          } else {
+            Write-Host "`nAll PowerShell files have valid syntax"
+          }
+
+  security-scan:
+    name: Security Scanning
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Run security rules
+        shell: pwsh
+        run: |
+          Write-Host "Running security analysis..."
+
+          # Run PSScriptAnalyzer with focus on security rules
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -IncludeRule PSAvoid*
+
+          if ($results) {
+            Write-Host "Security analysis results:"
+            $results | Format-Table -AutoSize
+
+            $criticalIssues = $results | Where-Object {
+              $_.RuleName -match 'AvoidUsing(Plain|ConvertTo).*SecureString|AvoidUsingCmdletAliases|AvoidUsingPositionalParameters'
+            }
+
+            if ($criticalIssues) {
+              Write-Warning "Found potential security issues"
+              $criticalIssues | Format-Table -AutoSize
+            }
+          } else {
+            Write-Host "No security issues found"
+          }

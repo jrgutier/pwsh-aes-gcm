@@ -1,0 +1,172 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.version }}"
+          } else {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          }
+
+          Write-Host "Version: $version"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Validate module
+        shell: pwsh
+        run: |
+          Write-Host "Validating module..."
+          Import-Module ./AesGcm.psd1 -Force -Verbose
+
+          # Run quick tests
+          Write-Host "Running test suite..."
+          Test-AesGcmImplementation
+
+      - name: Create release package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          Write-Host "Creating release package for version $version..."
+
+          # Create output directory
+          $packageDir = "AesGcm-$version"
+          New-Item -ItemType Directory -Path $packageDir -Force
+
+          # Copy module files
+          Copy-Item -Path "AesGcm.psd1" -Destination $packageDir
+          Copy-Item -Path "AesGcm.psm1" -Destination $packageDir
+          Copy-Item -Path "Classes" -Destination $packageDir -Recurse
+          Copy-Item -Path "TestVectors" -Destination $packageDir -Recurse
+          Copy-Item -Path "README.md" -Destination $packageDir
+          Copy-Item -Path "example.ps1" -Destination $packageDir
+          Copy-Item -Path "test-empty.ps1" -Destination $packageDir
+
+          # Create zip archive
+          $zipFile = "AesGcm-$version.zip"
+          Compress-Archive -Path $packageDir -DestinationPath $zipFile -Force
+
+          Write-Host "Package created: $zipFile"
+          "package_path=$zipFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Generate release notes
+        id: release_notes
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $notes = @"
+          # AES-GCM PowerShell Module v$version
+
+          ## Features
+          - AES-256-GCM authenticated encryption and decryption
+          - Automatic detection and fallback between .NET implementations
+          - Native System.Security.Cryptography.AesGcm support (.NET Core 3.0+, PowerShell 7+)
+          - BCrypt CNG P/Invoke fallback for .NET Framework 3.5+ (Windows PowerShell 5.1)
+          - Hex string input/output format
+          - Support for additional authenticated data (AAD)
+          - Compatible with Windows 7, 10, and 11
+          - No external dependencies - works on air-gapped systems
+
+          ## Installation
+
+          Download and extract the zip file, then import the module:
+
+          ``````powershell
+          Import-Module .\AesGcm.psd1
+          ``````
+
+          ## Quick Start
+
+          ``````powershell
+          # Generate key and nonce
+          `$key = New-AesGcmKey
+          `$nonce = New-AesGcmNonce
+
+          # Encrypt
+          `$plaintext = "48656c6c6f20576f726c64"  # "Hello World" in hex
+          `$result = ConvertTo-AesGcmEncrypted -Key `$key -Plaintext `$plaintext -Nonce `$nonce
+
+          # Decrypt
+          `$decrypted = ConvertFrom-AesGcmEncrypted -Key `$key -Ciphertext `$result.Ciphertext -Tag `$result.Tag -Nonce `$nonce
+          ``````
+
+          ## Testing
+
+          ``````powershell
+          Test-AesGcmImplementation -Verbose
+          ``````
+
+          ## Files Included
+          - AesGcm.psd1 - Module manifest
+          - AesGcm.psm1 - Main module
+          - Classes/AesGcmNative.ps1 - Native .NET implementation
+          - Classes/AesGcmLegacy.ps1 - BCrypt P/Invoke implementation
+          - TestVectors/aes_gcm_test.json - Wycheproof test vectors
+          - README.md - Documentation
+          - example.ps1 - Usage examples
+          - test-empty.ps1 - Edge case tests
+          "@
+
+          # Save to file and output
+          $notes | Out-File -FilePath "release-notes.md" -Encoding utf8
+          "notes_file=release-notes.md" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body_path: release-notes.md
+          files: |
+            AesGcm-${{ steps.version.outputs.version }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-release:
+    name: Test Release Package
+    needs: create-release
+    runs-on: windows-latest
+
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: AesGcm-${{ needs.create-release.outputs.version }}
+
+      - name: Test installation
+        shell: pwsh
+        run: |
+          Write-Host "Testing release package installation..."
+
+          # Extract and test
+          Expand-Archive -Path *.zip -DestinationPath ./test-install
+          Import-Module ./test-install/AesGcm-*/AesGcm.psd1 -Force -Verbose
+
+          # Quick validation
+          $key = New-AesGcmKey
+          $nonce = New-AesGcmNonce
+          Write-Host "Module loaded successfully from release package"
