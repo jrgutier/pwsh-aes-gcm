@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop, claude/** ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same workflow on the same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} with ${{ matrix.pwsh-version }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2019, windows-2022, windows-latest]
+        pwsh-version: ['5.1', '7.x']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Display PowerShell version
+        shell: pwsh
+        run: |
+          Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)"
+          Write-Host "OS: $($PSVersionTable.OS)"
+          Write-Host "Platform: $($PSVersionTable.Platform)"
+
+      - name: Test module import
+        shell: pwsh
+        run: |
+          Write-Host "Testing module import..."
+          Import-Module ./AesGcm.psd1 -Force -Verbose
+          Get-Module AesGcm
+
+      - name: Validate module manifest
+        shell: pwsh
+        run: |
+          Write-Host "Validating module manifest..."
+          $manifest = Test-ModuleManifest -Path ./AesGcm.psd1
+          Write-Host "Module: $($manifest.Name) v$($manifest.Version)"
+          Write-Host "Exported functions: $($manifest.ExportedFunctions.Keys -join ', ')"
+
+      - name: Run test suite
+        shell: pwsh
+        run: |
+          Write-Host "Running test suite..."
+          Import-Module ./AesGcm.psd1 -Force
+          Test-AesGcmImplementation -Verbose
+
+      - name: Test with PowerShell 5.1 (Windows PowerShell)
+        if: matrix.pwsh-version == '5.1' && runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Write-Host "Testing with Windows PowerShell 5.1..."
+          Import-Module ./AesGcm.psd1 -Force -Verbose
+          Test-AesGcmImplementation -Verbose
+
+      - name: Run example script
+        shell: pwsh
+        run: |
+          Write-Host "Running example script..."
+          & pwsh -NoProfile -File ./example.ps1
+
+      - name: Test empty plaintext handling
+        shell: pwsh
+        run: |
+          Write-Host "Testing empty plaintext handling..."
+          & pwsh -NoProfile -File ./test-empty.ps1
+
+  verify-implementations:
+    name: Verify both implementations
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test native implementation (PowerShell 7)
+        shell: pwsh
+        run: |
+          Write-Host "Testing native .NET implementation..."
+          Import-Module ./AesGcm.psd1 -Force -Verbose
+
+          # Generate test data (hex strings)
+          $key = New-AesGcmKey -AsHex
+          $nonce = New-AesGcmNonce -AsHex
+          $plaintext = "48656c6c6f20576f726c64"  # "Hello World" in hex
+
+          # Encrypt
+          $result = ConvertTo-AesGcmEncrypted -Key $key -Plaintext $plaintext -Nonce $nonce
+          Write-Host "Encrypted successfully with native implementation"
+
+          # Decrypt
+          $decrypted = ConvertFrom-AesGcmEncrypted -Key $key -Ciphertext $result.Ciphertext -Tag $result.Tag -Nonce $nonce
+          Write-Host "Decrypted: $decrypted"
+
+          if ($decrypted -ne $plaintext) {
+            throw "Decryption failed: expected '$plaintext', got '$decrypted'"
+          }
+
+      - name: Test legacy implementation (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          Write-Host "Testing BCrypt P/Invoke implementation..."
+          Import-Module ./AesGcm.psd1 -Force -Verbose
+
+          # Generate test data (hex strings)
+          $key = New-AesGcmKey -AsHex
+          $nonce = New-AesGcmNonce -AsHex
+          $plaintext = "48656c6c6f20576f726c64"  # "Hello World" in hex
+
+          # Encrypt
+          $result = ConvertTo-AesGcmEncrypted -Key $key -Plaintext $plaintext -Nonce $nonce
+          Write-Host "Encrypted successfully with legacy implementation"
+
+          # Decrypt
+          $decrypted = ConvertFrom-AesGcmEncrypted -Key $key -Ciphertext $result.Ciphertext -Tag $result.Tag -Nonce $nonce
+          Write-Host "Decrypted: $decrypted"
+
+          if ($decrypted -ne $plaintext) {
+            throw "Decryption failed: expected '$plaintext', got '$decrypted'"
+          }
