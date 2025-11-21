@@ -5,6 +5,7 @@
 # Load implementation classes
 . "$PSScriptRoot/Classes/AesGcmNative.ps1"
 . "$PSScriptRoot/Classes/AesGcmLegacy.ps1"
+. "$PSScriptRoot/Classes/AesGcmFull.ps1"
 
 # Module-level variables
 $script:AesGcmImplType = $null
@@ -45,6 +46,13 @@ function Invoke-AesGcmEncrypt {
 
     Initialize-AesGcmImplementation
 
+    # Check if nonce is standard 96-bit (12 bytes)
+    # If not, use the full GCM implementation that supports variable IV sizes
+    if ($Nonce.Length -ne 12) {
+        Write-Verbose "Using full GCM implementation for non-standard IV size: $($Nonce.Length) bytes"
+        return Invoke-AesGcmFullEncrypt -Key $Key -Nonce $Nonce -Plaintext $Plaintext -Aad $Aad
+    }
+
     if ($script:UseNative) {
         return Invoke-AesGcmNativeEncrypt -Key $Key -Nonce $Nonce -Plaintext $Plaintext -Aad $Aad
     }
@@ -63,6 +71,13 @@ function Invoke-AesGcmDecrypt {
     )
 
     Initialize-AesGcmImplementation
+
+    # Check if nonce is standard 96-bit (12 bytes)
+    # If not, use the full GCM implementation that supports variable IV sizes
+    if ($Nonce.Length -ne 12) {
+        Write-Verbose "Using full GCM implementation for non-standard IV size: $($Nonce.Length) bytes"
+        return Invoke-AesGcmFullDecrypt -Key $Key -Nonce $Nonce -Ciphertext $Ciphertext -Tag $Tag -Aad $Aad
+    }
 
     if ($script:UseNative) {
         return Invoke-AesGcmNativeDecrypt -Key $Key -Nonce $Nonce -Ciphertext $Ciphertext -Tag $Tag -Aad $Aad
