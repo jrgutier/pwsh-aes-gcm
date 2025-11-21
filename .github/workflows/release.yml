@@ -100,9 +100,9 @@ jobs:
           ## Quick Start
 
           ``````powershell
-          # Generate key and nonce
-          `$key = New-AesGcmKey
-          `$nonce = New-AesGcmNonce
+          # Generate key and nonce (as hex strings)
+          `$key = New-AesGcmKey -AsHex
+          `$nonce = New-AesGcmNonce -AsHex
 
           # Encrypt
           `$plaintext = "48656c6c6f20576f726c64"  # "Hello World" in hex
@@ -167,6 +167,6 @@ jobs:
           Import-Module ./test-install/AesGcm-*/AesGcm.psd1 -Force -Verbose
 
           # Quick validation
-          $key = New-AesGcmKey
-          $nonce = New-AesGcmNonce
+          $key = New-AesGcmKey -AsHex
+          $nonce = New-AesGcmNonce -AsHex
           Write-Host "Module loaded successfully from release package"

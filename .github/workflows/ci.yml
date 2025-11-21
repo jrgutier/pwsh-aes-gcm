@@ -91,9 +91,9 @@ jobs:
           Write-Host "Testing native .NET implementation..."
           Import-Module ./AesGcm.psd1 -Force -Verbose
 
-          # Generate test data
-          $key = New-AesGcmKey
-          $nonce = New-AesGcmNonce
+          # Generate test data (hex strings)
+          $key = New-AesGcmKey -AsHex
+          $nonce = New-AesGcmNonce -AsHex
           $plaintext = "48656c6c6f20576f726c64"  # "Hello World" in hex
 
           # Encrypt
@@ -114,9 +114,9 @@ jobs:
           Write-Host "Testing BCrypt P/Invoke implementation..."
           Import-Module ./AesGcm.psd1 -Force -Verbose
 
-          # Generate test data
-          $key = New-AesGcmKey
-          $nonce = New-AesGcmNonce
+          # Generate test data (hex strings)
+          $key = New-AesGcmKey -AsHex
+          $nonce = New-AesGcmNonce -AsHex
           $plaintext = "48656c6c6f20576f726c64"  # "Hello World" in hex
 
           # Encrypt
