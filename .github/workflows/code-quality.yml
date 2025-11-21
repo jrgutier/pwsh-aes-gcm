@@ -7,6 +7,14 @@ on:
     branches: [ main, develop ]
   workflow_dispatch:
 
+# Cancel in-progress runs for the same workflow on the same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: PSScriptAnalyzer
@@ -16,7 +24,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache PSScriptAnalyzer
+        id: cache-pssa
+        uses: actions/cache@v4
+        with:
+          path: ~\Documents\PowerShell\Modules\PSScriptAnalyzer
+          key: ${{ runner.os }}-pssa-${{ hashFiles('.github/workflows/code-quality.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-pssa-
+
       - name: Install PSScriptAnalyzer
+        if: steps.cache-pssa.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Write-Host "Installing PSScriptAnalyzer..."
@@ -95,7 +113,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache PSScriptAnalyzer
+        id: cache-pssa
+        uses: actions/cache@v4
+        with:
+          path: ~\Documents\PowerShell\Modules\PSScriptAnalyzer
+          key: ${{ runner.os }}-pssa-${{ hashFiles('.github/workflows/code-quality.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-pssa-
+
       - name: Install PSScriptAnalyzer
+        if: steps.cache-pssa.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck

@@ -2,11 +2,23 @@
 
 This directory contains CI/CD workflows for the AES-GCM PowerShell module.
 
+## Features
+
+- ✅ **Concurrency control** - Cancels outdated workflow runs automatically
+- ✅ **Security permissions** - Minimal required permissions for each workflow
+- ✅ **Caching** - PSScriptAnalyzer module cached for faster runs
+- ✅ **Matrix testing** - Multiple OS and PowerShell versions
+- ✅ **Parallel jobs** - Independent tests run concurrently
+
 ## Workflows
 
 ### CI (`ci.yml`)
 
 **Triggers:** Push to main/develop/claude/** branches, pull requests
+
+**Security:** Read-only content access
+
+**Concurrency:** Cancels in-progress runs for same PR/branch
 
 **Purpose:** Comprehensive testing across multiple Windows and PowerShell versions
 
@@ -31,11 +43,16 @@ This directory contains CI/CD workflows for the AES-GCM PowerShell module.
 
 **Triggers:** Push to main/develop/claude/** branches, pull requests
 
+**Security:** Read-only content access
+
+**Concurrency:** Cancels in-progress runs for same PR/branch
+
 **Purpose:** Code quality and security validation
 
 **Jobs:**
 
 1. **lint** - PSScriptAnalyzer linting
+   - Caches PSScriptAnalyzer module for faster runs
    - Runs with PSGallery settings
    - Checks for warnings and errors
    - Fails on errors
@@ -45,6 +62,7 @@ This directory contains CI/CD workflows for the AES-GCM PowerShell module.
    - Validates syntax correctness
 
 3. **security-scan** - Security analysis
+   - Caches PSScriptAnalyzer module for faster runs
    - Runs PSScriptAnalyzer security rules
    - Identifies potential security issues
 
@@ -53,6 +71,10 @@ This directory contains CI/CD workflows for the AES-GCM PowerShell module.
 **Triggers:**
 - Push tags matching `v*.*.*` (e.g., `v1.0.0`)
 - Manual workflow dispatch with version input
+
+**Security:** Write access to contents (required for creating releases)
+
+**Concurrency:** Prevents concurrent releases (no cancellation)
 
 **Purpose:** Automated release creation
 
@@ -107,7 +129,31 @@ Add these badges to your README.md:
 
 ## Local Testing
 
-Before pushing, you can test locally:
+### Pre-Push Verification (Recommended)
+
+Before pushing, run the automated pre-push verification script:
+
+```powershell
+# Full check (runs all validations including test suite)
+.\pre-push-check.ps1
+
+# Quick check (syntax, manifest, linting, smoke test only)
+.\pre-push-check.ps1 -Quick
+
+# Skip test suite (for faster validation)
+.\pre-push-check.ps1 -SkipTests
+```
+
+The script validates:
+- ✓ PowerShell syntax
+- ✓ Module manifest
+- ✓ PSScriptAnalyzer rules
+- ✓ Module import and smoke test
+- ✓ Full test suite (unless skipped)
+
+### Manual Testing
+
+You can also test manually:
 
 ```powershell
 # Import module

@@ -7,6 +7,14 @@ on:
     branches: [ main, develop ]
   workflow_dispatch:
 
+# Cancel in-progress runs for the same workflow on the same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test on ${{ matrix.os }} with ${{ matrix.pwsh-version }}
@@ -21,12 +29,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup PowerShell 7
-        if: matrix.pwsh-version == '7.x'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
 
       - name: Display PowerShell version
         shell: pwsh

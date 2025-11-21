@@ -10,6 +10,11 @@ on:
         description: 'Version to release (e.g., 1.0.0)'
         required: true
 
+# Prevent concurrent releases
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   create-release:
     name: Create Release
