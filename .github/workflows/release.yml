@@ -158,7 +158,7 @@ jobs:
 
     steps:
       - name: Download release artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v7
         with:
           name: AesGcm-${{ needs.create-release.outputs.version }}
 
